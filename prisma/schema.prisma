@@ -1,0 +1,384 @@
+// ============================================================
+// Event Management System — Prisma Schema
+// مبني مباشرة على total_ERD.drawio (15 جدولاً) بعد المراجعة الأخيرة
+// ============================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  // ملاحظة: في Prisma 7 لا يُسمح بوضع url هنا إطلاقًا.
+  // الـ URL موجود بالفعل في prisma.config.ts (لا حاجة لتعديله).
+}
+
+// ------------------------------------------------------------
+// ENUMS
+// ------------------------------------------------------------
+// ملاحظة: الأنواع البنيوية المستقرة (الأدوار، حالات الحسابات، دورات
+// الحياة) أصبحت enum لضمان صحة البيانات على مستوى قاعدة البيانات.
+// أما الحقول الوصفية/السجلّية (type, decision_type, activity_type)
+// تركتها String لأن قوائمها (NL-xxx, DL-xxx, AL-xxx) تكبر باستمرار،
+// وتحويلها enum يعني migration جديدة كل مرة تضيفون نوع سجل جديد.
+// إن كنت تفضل enum لها أيضًا أخبرني وسأحوّلها.
+
+enum Role {
+  CUSTOMER
+  EVENT_MANAGER
+  SERVICE_OWNER
+  ADMINISTRATOR
+}
+
+// ⚠️ قرار مؤقت: افترضت أن Customer لا يحتاج Pending Verification
+// (يُنشأ الحساب بحالة APPROVED مباشرة)، بينما Event Manager وService Owner
+// يمرّان بـ PENDING_VERIFICATION إلزاميًا. هذا يحسم التعارض الذي ذكرته
+// سابقًا بين SRS ("كل حساب يخضع للمراجعة") وBusiness Rules ("الحساب
+// الاحترافي فقط"). صحّح لي إن كان القرار الصحيح مختلفًا.
+enum AccountStatus {
+  PENDING_VERIFICATION
+  APPROVED
+  REJECTED
+}
+
+// دورة حياة المناسبة كما اتفقتما عليها سابقًا في المحادثة
+enum EventStatus {
+  CREATED
+  SUBMITTED
+  ADOPTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+// دورة حياة الخدمة كما في System Glossary (Service Lifecycle)
+enum EventServiceStatus {
+  PENDING_ASSIGNMENT
+  ASSIGNED
+  ACCEPTED
+  REJECTED
+  IN_PROGRESS
+  WAITING_FOR_VERIFICATION
+  NEEDS_CORRECTION
+  COMPLETED
+}
+
+// حالة طلب إسناد واحد فقط (وليس دورة الحياة الكاملة) — راجع ملاحظتي
+// السابقة حول الفرق بين Event_Service.status وSERVICE_REQUEST.status
+enum ServiceRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ManagerRole {
+  PRIMARY
+  ASSISTANT
+}
+
+enum ManagerAssignmentStatus {
+  ACTIVE
+  ENDED
+}
+
+enum AssistantRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ActiveStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RelatedEntityType {
+  EVENT
+  EVENT_SERVICE
+  USER
+}
+
+// كتالوج الفئات الثابت — هذه القيم هي ما يظهر في قوائم البحث/الفلترة
+enum ServiceCategory {
+  PHOTOGRAPHY
+  CATERING
+  DECORATION
+  DANCE_AND_CHOREOGRAPHY
+  MUSIC_AND_ENTERTAINMENT
+  VENUE
+  LIGHTING
+  FURNITURE_AND_SEATING
+  TRANSPORTATION
+  SWEETS_AND_DESSERTS
+  BEAUTY_AND_MAKEUP
+  PRINTING_AND_INVITATIONS
+  OTHER
+}
+
+// ------------------------------------------------------------
+// MODELS
+// ------------------------------------------------------------
+
+model User {
+  id           Int           @id @default(autoincrement()) @map("user_id")
+  firstName    String        @map("first_name")
+  lastName     String        @map("last_name")
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  role         Role
+  accountStatus AccountStatus @default(PENDING_VERIFICATION) @map("account_status")
+  passwordResetToken       String?  @map("password_reset_token")
+  passwordResetExpiresAt   DateTime? @map("password_reset_expires_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  // العلاقات
+  events                    Event[]                     @relation("EventCustomer")
+  managerAssignments        EventManagerAssignment[]
+  assistanceRequestsMade    AssistantManagerRequest[]   @relation("Requester")
+  assistanceRequestsReceived AssistantManagerRequest[]  @relation("RequestedUser")
+  businesses                Business[]
+  decisions                 DecisionLog[]
+  activities                ActivityLog[]
+  notifications             Notification[]
+  verificationRequests      VerificationRequest[]       @relation("Applicant")
+  reviewedVerifications     VerificationRequest[]       @relation("Reviewer")
+  eventServiceStatusChanges EventServiceStatusHistory[]
+  eventStatusChanges        EventStatusHistory[]
+
+  @@map("users")
+}
+
+model Event {
+  id          Int         @id @default(autoincrement()) @map("event_id")
+  userId      Int         @map("user_id")
+  title       String
+  description String?     @db.Text
+  eventDate   DateTime    @map("event_date")
+  location    String
+  status      EventStatus @default(CREATED)
+  assistantManagersNeeded Int @default(0) @map("assistant_managers_needed")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  customer                User                      @relation("EventCustomer", fields: [userId], references: [id])
+  managerAssignments      EventManagerAssignment[]
+  assistantRequests       AssistantManagerRequest[]
+  eventServices           EventService[]
+  decisions                DecisionLog[]
+  activities               ActivityLog[]
+  statusHistory             EventStatusHistory[]
+
+  @@map("events")
+}
+
+model EventManagerAssignment {
+  id           Int                      @id @default(autoincrement()) @map("assignment_id")
+  eventId      Int                      @map("event_id")
+  userId       Int                      @map("user_id")
+  managerRole  ManagerRole              @map("manager_role")
+  status       ManagerAssignmentStatus  @default(ACTIVE)
+  assignedAt   DateTime                 @default(now()) @map("assigned_at")
+  joinedAt     DateTime?                @map("joined_at")
+  endedAt      DateTime?                @map("ended_at")
+
+  event Event @relation(fields: [eventId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("event_manager_assignments")
+}
+
+model AssistantManagerRequest {
+  id               Int                     @id @default(autoincrement()) @map("request_id")
+  eventId          Int                     @map("event_id")
+  requesterId      Int                     @map("requester_id")
+  requestedUserId  Int                     @map("requested_user_id")
+  status           AssistantRequestStatus  @default(PENDING)
+  reason           String?                 @db.Text
+  requestedAt      DateTime                @default(now()) @map("requested_at")
+  respondedAt      DateTime?               @map("responded_at")
+
+  event         Event @relation(fields: [eventId], references: [id])
+  requester     User  @relation("Requester", fields: [requesterId], references: [id])
+  requestedUser User  @relation("RequestedUser", fields: [requestedUserId], references: [id])
+
+  @@map("assistant_manager_requests")
+}
+
+model Business {
+  id          Int          @id @default(autoincrement()) @map("business_id")
+  ownerId     Int          @map("owner_id")
+  name        String
+  description String?      @db.Text
+  phone       String
+  address     String
+  status      ActiveStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  owner            User              @relation(fields: [ownerId], references: [id])
+  businessServices BusinessService[]
+
+  @@map("businesses")
+}
+
+model Service {
+  id          Int          @id @default(autoincrement()) @map("service_id")
+  name        String
+  description String?      @db.Text
+  category    ServiceCategory
+  status      ActiveStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  businessServices BusinessService[]
+
+  @@map("services")
+}
+
+model BusinessService {
+  id          Int          @id @default(autoincrement()) @map("business_service_id")
+  businessId  Int          @map("business_id")
+  serviceId   Int          @map("service_id")
+  price       Decimal      @db.Decimal(10, 2)
+  description String?      @db.Text
+  status      ActiveStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  business        Business         @relation(fields: [businessId], references: [id])
+  service         Service          @relation(fields: [serviceId], references: [id])
+  serviceRequests ServiceRequest[]
+
+  @@map("business_services")
+}
+
+model EventService {
+  id           Int                 @id @default(autoincrement()) @map("event_service_id")
+  eventId      Int                 @map("event_id")
+  status       EventServiceStatus  @default(PENDING_ASSIGNMENT)
+  price        Decimal?            @db.Decimal(10, 2)
+  requestedAt  DateTime            @default(now()) @map("requested_at")
+  startedAt    DateTime?           @map("started_at")
+  completedAt  DateTime?           @map("completed_at")
+
+  event           Event                        @relation(fields: [eventId], references: [id])
+  serviceRequests ServiceRequest[]
+  statusHistory   EventServiceStatusHistory[]
+
+  @@map("event_services")
+}
+
+// يمثل كل صف هنا "محاولة إسناد" واحدة (لخدمة معينة إلى مزود معين)
+// وبتراكم الصفوف هنا نحصل مجانًا على Assignment History المطلوب في
+// Business Rules عند استبدال Service Owner دون حذف أي سجل سابق.
+model ServiceRequest {
+  id               Int                    @id @default(autoincrement()) @map("request_id")
+  eventServiceId   Int                    @map("event_service_id")
+  businessServiceId Int                   @map("business_service_id")
+  status           ServiceRequestStatus   @default(PENDING)
+  requestedAt      DateTime               @default(now()) @map("requested_at")
+  respondedAt      DateTime?              @map("responded_at")
+
+  eventService    EventService    @relation(fields: [eventServiceId], references: [id])
+  businessService BusinessService @relation(fields: [businessServiceId], references: [id])
+
+  @@map("service_requests")
+}
+
+model DecisionLog {
+  id           Int      @id @default(autoincrement()) @map("decision_id")
+  eventId      Int?     @map("event_id")
+  decidedBy    Int      @map("decided_by")
+  decisionType String   @map("decision_type") // DL-001..DL-014 راجع Decision Logs.docx
+  decision     String
+  reason       String?  @db.Text
+  decidedAt    DateTime @default(now()) @map("decided_at")
+
+  event Event? @relation(fields: [eventId], references: [id])
+  user  User   @relation(fields: [decidedBy], references: [id])
+
+  @@map("decision_logs")
+}
+
+model ActivityLog {
+  id           Int      @id @default(autoincrement()) @map("activity_id")
+  userId       Int      @map("user_id")
+  eventId      Int?     @map("event_id")
+  activityType String   @map("activity_type") // AL-001..AL-021 راجع Activity_Logs.docx
+  description  String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id])
+  event Event? @relation(fields: [eventId], references: [id])
+
+  @@map("activity_logs")
+}
+
+model Notification {
+  id               Int                @id @default(autoincrement()) @map("notification_id")
+  userId           Int                @map("user_id")
+  type             String             // NL-001..NL-019 راجع Notification_Logs.docx
+  title            String
+  message          String             @db.Text
+  isRead           Boolean            @default(false) @map("is_read")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  relatedEntityType RelatedEntityType? @map("related_entity_type")
+  relatedEntityId   Int?              @map("related_entity_id")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model VerificationRequest {
+  id               Int                 @id @default(autoincrement()) @map("verification_id")
+  userId           Int                 @map("user_id")
+  reviewedBy       Int?                @map("reviewed_by")
+  status           VerificationStatus  @default(PENDING)
+  submittedAt      DateTime            @default(now()) @map("submitted_at")
+  reviewedAt       DateTime?           @map("reviewed_at")
+  documentPath     String              @map("document_path")
+  rejectionReason  String?             @db.Text @map("rejection_reason")
+
+  applicant User  @relation("Applicant", fields: [userId], references: [id])
+  reviewer  User? @relation("Reviewer", fields: [reviewedBy], references: [id])
+
+  @@map("verification_requests")
+}
+
+model EventServiceStatusHistory {
+  id             Int      @id @default(autoincrement()) @map("history_id")
+  eventServiceId Int      @map("event_service_id")
+  changedBy      Int      @map("changed_by")
+  oldStatus      String   @map("old_status")
+  newStatus      String   @map("new_status")
+  reason         String?  @db.Text
+  changedAt      DateTime @default(now()) @map("changed_at")
+
+  eventService EventService @relation(fields: [eventServiceId], references: [id])
+  changedByUser User        @relation(fields: [changedBy], references: [id])
+
+  @@map("event_service_status_history")
+}
+
+model EventStatusHistory {
+  id        Int      @id @default(autoincrement()) @map("history_id")
+  eventId   Int      @map("event_id")
+  changedBy Int      @map("changed_by")
+  oldStatus String   @map("old_status")
+  newStatus String   @map("new_status")
+  reason    String?  @db.Text
+  changedAt DateTime @default(now()) @map("changed_at")
+
+  event         Event @relation(fields: [eventId], references: [id])
+  changedByUser User  @relation(fields: [changedBy], references: [id])
+
+  @@map("event_status_history")
+}
