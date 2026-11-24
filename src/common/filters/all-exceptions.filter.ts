@@ -8,6 +8,28 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
+const SAFE_ERROR_CODES = new Set([
+  'ECONNECTION',
+  'ECONNREFUSED',
+  'EDNS',
+  'EAUTH',
+  'EENVELOPE',
+  'ESOCKET',
+  'ESMTP',
+  'ETIMEDOUT',
+]);
+
+const SAFE_FAILURE_PHASES = new Set([
+  'AUTH',
+  'CONN',
+  'DATA',
+  'EHLO',
+  'MAIL',
+  'QUIT',
+  'RCPT',
+  'STARTTLS',
+]);
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionsHandler');
@@ -33,17 +55,49 @@ export class AllExceptionsFilter implements ExceptionFilter {
         error = (b.error as string) ?? HttpStatus[statusCode];
       }
     } else {
-      // خطأ غير متوقع (مثل خطأ برمجي أو مشكلة اتصال بقاعدة البيانات) — لا نكشف تفاصيله الداخلية للمستخدم،
-      // لكن نسجّله كاملاً في الطرفية لتشخيصه
-      this.logger.error(exception instanceof Error ? exception.stack : exception);
+      this.logger.error(
+        JSON.stringify({
+          event: 'Unhandled exception',
+          errorType: this.safeErrorType(exception),
+          code: this.safeAllowlistedProperty(exception, 'code', SAFE_ERROR_CODES),
+          phase: this.safeAllowlistedProperty(
+            exception,
+            'command',
+            SAFE_FAILURE_PHASES,
+          ),
+        }),
+      );
     }
 
     response.status(statusCode).json({
       statusCode,
       error,
       message,
-      path: request.url,
+      path: request.path,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  private safeErrorType(exception: unknown): string {
+    if (exception instanceof TypeError) return 'TypeError';
+    if (exception instanceof RangeError) return 'RangeError';
+    if (exception instanceof SyntaxError) return 'SyntaxError';
+    if (exception instanceof ReferenceError) return 'ReferenceError';
+    if (exception instanceof URIError) return 'URIError';
+    if (exception instanceof EvalError) return 'EvalError';
+    if (exception instanceof Error) return 'Error';
+    return 'UnknownError';
+  }
+
+  private safeAllowlistedProperty(
+    exception: unknown,
+    property: 'code' | 'command',
+    allowlist: Set<string>,
+  ): string | undefined {
+    if (typeof exception !== 'object' || exception === null) return undefined;
+
+    const descriptor = Object.getOwnPropertyDescriptor(exception, property);
+    const value = descriptor?.value;
+    return typeof value === 'string' && allowlist.has(value) ? value : undefined;
   }
 }

@@ -20,6 +20,7 @@ export class UsersService {
         id: true,
         firstName: true,
         lastName: true,
+        phone: true,
         email: true,
         role: true,
         accountStatus: true,
@@ -46,12 +47,14 @@ export class UsersService {
       data: {
         ...(dto.firstName ? { firstName: dto.firstName } : {}),
         ...(dto.lastName ? { lastName: dto.lastName } : {}),
+        ...(dto.phone ? { phone: dto.phone } : {}),
         ...(dto.email ? { email: dto.email } : {}),
       },
       select: {
         id: true,
         firstName: true,
         lastName: true,
+        phone: true,
         email: true,
         role: true,
         accountStatus: true,

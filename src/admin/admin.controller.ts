@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   NotFoundException,
@@ -50,6 +51,38 @@ export class AdminController {
   @Get('verification-requests/:id/document')
   async getDocument(@Param('id', ParseIntPipe) id: number): Promise<StreamableFile> {
     const relativePath = await this.adminService.getVerificationDocumentPath(id);
+    return this.streamVerificationDocument(relativePath);
+  }
+
+  @Get('verification-requests/:id/documents/:documentType')
+  async getVerificationDocument(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('documentType') documentType: string,
+  ): Promise<StreamableFile> {
+    const documentTypes: Record<
+      string,
+      'identity-front' | 'identity-back' | 'business-front'
+    > = {
+      'identity-front': 'identity-front',
+      identityFront: 'identity-front',
+      'identity-back': 'identity-back',
+      identityBack: 'identity-back',
+      'business-front': 'business-front',
+      businessFront: 'business-front',
+    };
+    const normalizedDocumentType = documentTypes[documentType];
+    if (!normalizedDocumentType) {
+      throw new BadRequestException('نوع المستند غير صالح.');
+    }
+
+    const relativePath = await this.adminService.getVerificationDocumentPath(
+      id,
+      normalizedDocumentType,
+    );
+    return this.streamVerificationDocument(relativePath);
+  }
+
+  private streamVerificationDocument(relativePath: string): StreamableFile {
     const absolutePath = join(process.cwd(), 'uploads', relativePath);
 
     if (!existsSync(absolutePath)) {

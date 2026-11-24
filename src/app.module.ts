@@ -9,10 +9,14 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { BusinessModule } from './business/business.module';
 import { UsersModule } from './users/users.module';
 import { HealthModule } from './health/health.module';
+import { RequestLockModule } from './request-lock/request-lock.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
     PrismaModule,
+    RequestLockModule,
+    EmailModule,
     AuthModule,
     AdminModule,
     AssistantManagerModule,

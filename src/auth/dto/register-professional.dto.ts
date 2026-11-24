@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsString, Matches, MinLength } from 'class-validator';
 
 export class RegisterProfessionalDto {
   @IsString()
@@ -8,6 +8,12 @@ export class RegisterProfessionalDto {
   @IsString()
   @MinLength(2)
   lastName: string;
+
+  @IsString()
+  @Matches(/^\+?[0-9\s().-]{7,10}$/, {
+    message: 'رقم الهاتف غير صالح.',
+  })
+  phone: string;
 
   @IsEmail()
   email: string;

@@ -4,11 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "ts-node --files src/auth/auth.service.spec.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "nest build",
-    "create-admin": "ts-node src/scripts/create-admin.ts"
+    "create-admin": "ts-node src/scripts/create-admin.ts",
+    "email:test": "ts-node --files src/scripts/send-test-email.ts"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +23,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/multer": "^2.2.0",
     "@types/node": "^26.1.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/passport-jwt": "^4.0.1",
     "prisma": "^7.9.1",
     "source-map-support": "^0.5.21",
@@ -45,6 +47,7 @@
     "dotenv": "^17.4.2",
     "mariadb": "^3.5.3",
     "multer": "^2.2.0",
+    "nodemailer": "^10.1.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",

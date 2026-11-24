@@ -20,6 +20,7 @@ export class AdminService {
             id: true,
             firstName: true,
             lastName: true,
+            phone: true,
             email: true,
             role: true,
             accountStatus: true,
@@ -164,6 +165,7 @@ export class AdminService {
         id: true,
         firstName: true,
         lastName: true,
+        phone: true,
         email: true,
         role: true,
         accountStatus: true,
@@ -180,6 +182,7 @@ export class AdminService {
         id: true,
         firstName: true,
         lastName: true,
+        phone: true,
         email: true,
         role: true,
         accountStatus: true,
@@ -246,11 +249,19 @@ export class AdminService {
   // -----------------------------------------------------------
   // مسار مستند التحقق المخزَّن (يُستخدم لعرضه/تحميله من الكونترولر)
   // -----------------------------------------------------------
-  async getVerificationDocumentPath(verificationId: number) {
+  async getVerificationDocumentPath(
+    verificationId: number,
+    documentType: 'identity-front' | 'identity-back' | 'business-front' = 'identity-front',
+  ) {
     const request = await this.prisma.verificationRequest.findUnique({ where: { id: verificationId } });
     if (!request) throw new NotFoundException('طلب التحقق غير موجود.');
-    if (!request.documentPath) throw new NotFoundException('لا يوجد مستند مرفق لهذا الطلب.');
-    return request.documentPath;
+    const documentPath = {
+      'identity-front': request.identityFrontPath ?? request.documentPath,
+      'identity-back': request.identityBackPath,
+      'business-front': request.businessFrontPath,
+    }[documentType];
+    if (!documentPath) throw new NotFoundException('لا يوجد مستند مرفق من هذا النوع لهذا الطلب.');
+    return documentPath;
   }
 
   // -----------------------------------------------------------

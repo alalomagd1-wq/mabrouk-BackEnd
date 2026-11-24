@@ -57,6 +57,7 @@ async function main() {
         passwordHash,
         role: 'ADMINISTRATOR',
         accountStatus: 'APPROVED',
+        emailVerifiedAt: new Date(),
       },
     });
 

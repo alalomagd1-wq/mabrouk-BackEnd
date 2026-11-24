@@ -6,11 +6,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RequestLockService } from '../request-lock/request-lock.service';
 import { CreateEventDto } from './dto/create-event.dto';
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly requestLock: RequestLockService,
+  ) {}
 
   // -----------------------------------------------------------
   // الخدمات المتاحة للعميل ليختار منها عند إنشاء المناسبة
@@ -121,73 +125,77 @@ export class EventsService {
   // مدير المناسبة يتبنى الطلب فيصبح Primary Event Manager
   // -----------------------------------------------------------
   async adopt(eventId: number, managerId: number) {
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-      include: { managerAssignments: { where: { managerRole: 'PRIMARY', status: 'ACTIVE' } } },
-    });
+    const lockKey = `event:${eventId}:adopt`;
 
-    if (!event) throw new NotFoundException('المناسبة غير موجودة.');
-    if (event.status !== 'SUBMITTED') {
-      throw new ConflictException(`لا يمكن تبنّي هذه المناسبة، حالتها الحالية "${event.status}".`);
-    }
-    if (event.managerAssignments.length > 0) {
-      throw new ConflictException('تم تبنّي هذه المناسبة بالفعل من مدير آخر.');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.eventManagerAssignment.create({
-        data: {
-          eventId,
-          userId: managerId,
-          managerRole: 'PRIMARY',
-          status: 'ACTIVE',
-          joinedAt: new Date(),
-        },
-      });
-
-      const updatedEvent = await tx.event.update({
+    return this.requestLock.executeWithLock(lockKey, async () => {
+      const event = await this.prisma.event.findUnique({
         where: { id: eventId },
-        data: { status: 'ADOPTED' },
+        include: { managerAssignments: { where: { managerRole: 'PRIMARY', status: 'ACTIVE' } } },
       });
 
-      await tx.eventStatusHistory.create({
-        data: {
-          eventId,
-          changedBy: managerId,
-          oldStatus: 'SUBMITTED',
-          newStatus: 'ADOPTED',
-        },
-      });
+      if (!event) throw new NotFoundException('المناسبة غير موجودة.');
+      if (event.status !== 'SUBMITTED') {
+        throw new ConflictException(`لا يمكن تبنّي هذه المناسبة، حالتها الحالية "${event.status}".`);
+      }
+      if (event.managerAssignments.length > 0) {
+        throw new ConflictException('تم تبنّي هذه المناسبة بالفعل من مدير آخر.');
+      }
 
-      await tx.decisionLog.create({
-        data: {
-          eventId,
-          decidedBy: managerId,
-          decisionType: 'ADOPT_EVENT_REQUEST', // DL-005
-          decision: 'Adopted',
-        },
-      });
+      return this.prisma.$transaction(async (tx) => {
+        await tx.eventManagerAssignment.create({
+          data: {
+            eventId,
+            userId: managerId,
+            managerRole: 'PRIMARY',
+            status: 'ACTIVE',
+            joinedAt: new Date(),
+          },
+        });
 
-      await tx.activityLog.create({
-        data: {
-          userId: managerId,
-          eventId,
-          activityType: 'EVENT_ADOPTED',
-        },
-      });
+        const updatedEvent = await tx.event.update({
+          where: { id: eventId },
+          data: { status: 'ADOPTED' },
+        });
 
-      await tx.notification.create({
-        data: {
-          userId: updatedEvent.userId,
-          type: 'EVENT_ADOPTED', // NL-006
-          title: 'تم تبنّي مناسبتك',
-          message: 'قام أحد مدراء المناسبات بتبنّي طلبك وسيبدأ بترتيب الخدمات المطلوبة.',
-          relatedEntityType: 'EVENT',
-          relatedEntityId: eventId,
-        },
-      });
+        await tx.eventStatusHistory.create({
+          data: {
+            eventId,
+            changedBy: managerId,
+            oldStatus: 'SUBMITTED',
+            newStatus: 'ADOPTED',
+          },
+        });
 
-      return updatedEvent;
+        await tx.decisionLog.create({
+          data: {
+            eventId,
+            decidedBy: managerId,
+            decisionType: 'ADOPT_EVENT_REQUEST', // DL-005
+            decision: 'Adopted',
+          },
+        });
+
+        await tx.activityLog.create({
+          data: {
+            userId: managerId,
+            eventId,
+            activityType: 'EVENT_ADOPTED',
+          },
+        });
+
+        await tx.notification.create({
+          data: {
+            userId: updatedEvent.userId,
+            type: 'EVENT_ADOPTED', // NL-006
+            title: 'تم تبنّي مناسبتك',
+            message: 'قام أحد مدراء المناسبات بتبنّي طلبك وسيبدأ بترتيب الخدمات المطلوبة.',
+            relatedEntityType: 'EVENT',
+            relatedEntityId: eventId,
+          },
+        });
+
+        return updatedEvent;
+      });
     });
   }
 

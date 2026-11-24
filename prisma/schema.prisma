@@ -129,12 +129,15 @@ model User {
   id           Int           @id @default(autoincrement()) @map("user_id")
   firstName    String        @map("first_name")
   lastName     String        @map("last_name")
+  phone        String?
   email        String        @unique
   passwordHash String        @map("password_hash")
   role         Role
   accountStatus AccountStatus @default(PENDING_VERIFICATION) @map("account_status")
+  emailVerifiedAt DateTime?    @map("email_verified_at")
   passwordResetToken       String?  @map("password_reset_token")
   passwordResetExpiresAt   DateTime? @map("password_reset_expires_at")
+  passwordResetAttempts    Int      @default(0) @map("password_reset_attempts")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
@@ -153,6 +156,29 @@ model User {
   eventStatusChanges        EventStatusHistory[]
 
   @@map("users")
+}
+
+model PendingRegistration {
+  id                    Int      @id @default(autoincrement()) @map("pending_registration_id")
+  firstName             String   @map("first_name")
+  lastName              String   @map("last_name")
+  phone                 String
+  email                 String   @unique
+  passwordHash          String   @map("password_hash")
+  role                  Role
+  identityFrontPath     String?  @map("identity_front_path")
+  identityBackPath      String?  @map("identity_back_path")
+  businessFrontPath    String?  @map("business_front_path")
+  verificationTokenHash String   @unique @map("verification_token_hash")
+  expiresAt             DateTime @map("expires_at")
+  resendAvailableAt     DateTime @map("resend_available_at")
+  resendWindowStartedAt DateTime @default(now()) @map("resend_window_started_at")
+  resendCount           Int      @default(0) @map("resend_count")
+  verificationAttempts  Int      @default(0) @map("verification_attempts")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("pending_registrations")
 }
 
 model Event {
@@ -345,6 +371,9 @@ model VerificationRequest {
   submittedAt      DateTime            @default(now()) @map("submitted_at")
   reviewedAt       DateTime?           @map("reviewed_at")
   documentPath     String              @map("document_path")
+  identityFrontPath String?            @map("identity_front_path")
+  identityBackPath  String?            @map("identity_back_path")
+  businessFrontPath String?            @map("business_front_path")
   rejectionReason  String?             @db.Text @map("rejection_reason")
 
   applicant User  @relation("Applicant", fields: [userId], references: [id])

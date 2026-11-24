@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -10,6 +10,13 @@ export class UpdateProfileDto {
   @IsString()
   @MinLength(2)
   lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\+?[0-9\s().-]{7,20}$/, {
+    message: 'رقم الهاتف غير صالح.',
+  })
+  phone?: string;
 
   @IsOptional()
   @IsEmail()
